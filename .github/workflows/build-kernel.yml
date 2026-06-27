@@ -77,7 +77,6 @@ jobs:
           echo "KERNEL_BUILT=true" >> $GITHUB_ENV
         else
           echo "❌ Kernel build failed!"
-          tail -50 build.log
           exit 1
         fi
 
