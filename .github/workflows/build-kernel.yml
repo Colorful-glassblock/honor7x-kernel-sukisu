@@ -24,7 +24,21 @@ jobs:
         sudo apt-get install -y \
           build-essential bc bison flex libssl-dev libelf-dev \
           gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-          cpio kmod udev
+          cpio kmod udev ccache
+
+    - name: Setup ccache
+      run: |
+        echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
+        echo "CCACHE_MAX=2G" >> $GITHUB_ENV
+        echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
+        ccache --version
+
+    - name: Cache ccache
+      uses: actions/cache@v4
+      with:
+        path: .ccache
+        key: ccache-${{ github.sha }}
+        restore-keys: ccache-
 
     - name: Set build variables
       run: |
@@ -51,6 +65,7 @@ jobs:
 
     - name: Build kernel
       run: |
+        export PATH="/usr/lib/ccache:$PATH"
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) \
           Image.gz-dtb 2>&1 | tee build.log
 
@@ -66,6 +81,10 @@ jobs:
           exit 1
         fi
 
+    - name: ccache stats
+      if: always()
+      run: ccache -s
+
     - name: Package kernel
       if: env.KERNEL_BUILT == 'true'
       run: |
@@ -77,7 +96,7 @@ jobs:
         cat > output/build_info.txt << EOF
         Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
         Kernel Version: $(make kernelversion)
-        Device: Honor 7X (BND-L21/L31)
+        Device: Honor 7X (BND-AL10)
         SoC: Kirin 659 (hi6250)
         Architecture: arm64
         Defconfig: merge_hi6250_defconfig
