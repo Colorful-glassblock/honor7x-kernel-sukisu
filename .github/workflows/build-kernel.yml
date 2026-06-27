@@ -1,0 +1,97 @@
+name: Build Honor 7X Kernel with SukiSU
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+      with:
+        submodules: false
+
+    - name: Setup build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential bc bison flex libssl-dev libelf-dev \
+          gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+          cpio kmod udev
+
+    - name: Set build variables
+      run: |
+        echo "ARCH=arm64" >> $GITHUB_ENV
+        echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+        echo "DEFCONFIG=merge_hi6250_defconfig" >> $GITHUB_ENV
+        echo "KBUILD_BUILD_USER=sukisu" >> $GITHUB_ENV
+        echo "KBUILD_BUILD_HOST=github-actions" >> $GITHUB_ENV
+
+    - name: Clean build directory
+      run: make mrproper
+
+    - name: Generate .config
+      run: make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- merge_hi6250_defconfig
+
+    - name: Verify kernel config
+      run: |
+        echo "=== SELinux Config ==="
+        grep -E "SELINUX_DEVELOP|SELINUX_BOOTPARAM|SELINUX_DISABLE" .config
+        echo "=== BPF Config ==="
+        grep -E "CONFIG_BPF|CONFIG_CGROUP_BPF|CONFIG_NET_CLS_BPF|CONFIG_NET_ACT_BPF|CONFIG_BPF_JIT" .config
+        echo "=== KSU Config ==="
+        grep -E "CONFIG_KSU|CONFIG_KPROBES" .config
+
+    - name: Build kernel
+      run: |
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) \
+          Image.gz-dtb 2>&1 | tee build.log
+
+    - name: Check build result
+      run: |
+        if [ -f arch/arm64/boot/Image.gz-dtb ]; then
+          echo "✅ Kernel built successfully!"
+          ls -lh arch/arm64/boot/Image.gz-dtb
+          echo "KERNEL_BUILT=true" >> $GITHUB_ENV
+        else
+          echo "❌ Kernel build failed!"
+          tail -50 build.log
+          exit 1
+        fi
+
+    - name: Package kernel
+      if: env.KERNEL_BUILT == 'true'
+      run: |
+        mkdir -p output
+        cp arch/arm64/boot/Image.gz-dtb output/
+        cp .config output/kernel_config.txt
+        
+        # Create a build info file
+        cat > output/build_info.txt << EOF
+        Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        Kernel Version: $(make kernelversion)
+        Device: Honor 7X (BND-L21/L31)
+        SoC: Kirin 659 (hi6250)
+        Architecture: arm64
+        Defconfig: merge_hi6250_defconfig
+        
+        Features:
+        - SELinux: Permissive (CONFIG_SECURITY_SELINUX_DEVELOP=y)
+        - BPF: Full support (JIT, cgroup, classifier, actions)
+        - SukiSU: Integrated (KernelSU fork with kprobe hook)
+        EOF
+
+    - name: Upload kernel artifact
+      if: env.KERNEL_BUILT == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: honor7x-kernel-sukisu-${{ github.sha }}
+        path: output/
+        retention-days: 30
