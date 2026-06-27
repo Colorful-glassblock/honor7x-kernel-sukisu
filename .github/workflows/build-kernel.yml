@@ -65,11 +65,13 @@ jobs:
 
     - name: Build kernel
       run: |
+        set -o pipefail
         export PATH="/usr/lib/ccache:$PATH"
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) \
           Image.gz-dtb 2>&1 | tee build.log
 
     - name: Check build result
+      if: always()
       run: |
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
           echo "✅ Kernel built successfully!"
@@ -77,6 +79,7 @@ jobs:
           echo "KERNEL_BUILT=true" >> $GITHUB_ENV
         else
           echo "❌ Kernel build failed!"
+          grep -i "error[: ]" build.log | tail -30 || true
           exit 1
         fi
 
