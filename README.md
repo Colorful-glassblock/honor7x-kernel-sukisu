@@ -1,6 +1,6 @@
 # Honor 7X Kernel - SukiSU Edition
 
-Honor 7X (BND-L21/L31) kernel source with modifications.
+Honor 7X (BND-AL10) kernel source with modifications.
 
 ## Device Info
 - **Device**: Honor 7X
